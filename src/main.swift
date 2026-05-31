@@ -204,9 +204,8 @@ func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> U
             return nil
         }
 
-        // Cmd+Shift+\ (keycode 42)  ИЛИ  F12 (keycode 111)  →  панель записи macOS
-        if (keycode == screenshotKeycode && flags == targetCombo) ||
-           (keycode == 111 && flags.isEmpty) {
+        // Cmd+Shift+\ (keycode 42)  →  панель записи видео macOS
+        if keycode == screenshotKeycode && flags == targetCombo {
             DispatchQueue.main.async { openNativeRecorder() }
             return nil
         }
