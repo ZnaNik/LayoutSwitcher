@@ -46,16 +46,18 @@ func showHUD(_ text: String) {
     DispatchQueue.main.async {
         hudWindow?.close()
 
-        let padding: CGFloat = 16
-        let font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+        let padding: CGFloat = 20
+        let accentWidth: CGFloat = 5
+        let font = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let textColor = NSColor(calibratedRed: 0.96, green: 0.97, blue: 1.0, alpha: 1.0)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
         let textSize = (text as NSString).size(withAttributes: attrs)
-        let w = min(textSize.width + padding * 2, 560)
-        let h: CGFloat = 44
+        let w = min(textSize.width + padding * 2 + accentWidth, 580)
+        let h: CGFloat = 48
 
         guard let screen = NSScreen.main else { return }
         let x = screen.frame.midX - w / 2
-        let y = screen.frame.minY + 80
+        let y = screen.frame.minY + 90
 
         let win = NSWindow(
             contentRect: NSRect(x: x, y: y, width: w, height: h),
@@ -66,18 +68,27 @@ func showHUD(_ text: String) {
         win.ignoresMouseEvents = true
         win.hasShadow = true
 
-        let bg = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: w, height: h))
-        bg.material = .hudWindow
-        bg.state = .active
+        // Тёмная непрозрачная плашка — высокий контраст, хорошо читается
+        let bg = NSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
         bg.wantsLayer = true
-        bg.layer?.cornerRadius = 12
+        bg.layer?.backgroundColor = NSColor(calibratedRed: 0.11, green: 0.12, blue: 0.18, alpha: 0.97).cgColor
+        bg.layer?.cornerRadius = 14
         bg.layer?.masksToBounds = true
+        bg.layer?.borderWidth = 1
+        bg.layer?.borderColor = NSColor(calibratedRed: 0.30, green: 0.55, blue: 1.0, alpha: 0.5).cgColor
+
+        // Левая акцентная полоска (бирюзово-синяя)
+        let accent = NSView(frame: NSRect(x: 0, y: 0, width: accentWidth, height: h))
+        accent.wantsLayer = true
+        accent.layer?.backgroundColor = NSColor(calibratedRed: 0.20, green: 0.78, blue: 0.55, alpha: 1.0).cgColor
+        bg.addSubview(accent)
 
         let label = NSTextField(labelWithString: text)
         label.font = font
-        label.textColor = .white
-        label.alignment = .center
-        label.frame = NSRect(x: padding, y: (h - textSize.height) / 2, width: w - padding * 2, height: textSize.height)
+        label.textColor = textColor
+        label.alignment = .left
+        label.frame = NSRect(x: accentWidth + padding, y: (h - textSize.height) / 2,
+                             width: w - accentWidth - padding * 2, height: textSize.height)
         bg.addSubview(label)
 
         win.contentView = bg
