@@ -41,10 +41,16 @@ func switchToNextInputSource() {
 // MARK: - HUD окошко (как в Lightshot, не зависит от системных уведомлений)
 
 var hudWindow: NSWindow?
+var hudDismiss: DispatchWorkItem?  // отменяемое закрытие текущей плашки
+var activeSound: NSSound?  // strong ref: NSSound.play() is async, must not autorelease mid-playback
 
 func showHUD(_ text: String) {
     DispatchQueue.main.async {
-        hudWindow?.close()
+        // Гасим предыдущую плашку безопасно: отменяем её таймер и убираем без релиза.
+        hudDismiss?.cancel()
+        hudDismiss = nil
+        hudWindow?.orderOut(nil)
+        hudWindow = nil
 
         let padding: CGFloat = 20
         let accentWidth: CGFloat = 5
@@ -91,6 +97,8 @@ func showHUD(_ text: String) {
                              width: w - accentWidth - padding * 2, height: textSize.height)
         bg.addSubview(label)
 
+        win.isReleasedWhenClosed = false  // КЛЮЧЕВОЕ: иначе close() сразу освобождает окно,
+                                          // а отложенный таймер обращается к мёртвой памяти → segfault
         win.contentView = bg
         win.alphaValue = 0
         win.orderFront(nil)
@@ -100,12 +108,19 @@ func showHUD(_ text: String) {
             ctx.duration = 0.18
             win.animator().alphaValue = 1
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.3) {
+
+        // Отменяемое закрытие. Замыкание трогает только своё окно и сверяется с hudWindow.
+        let dismiss = DispatchWorkItem {
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.3
                 win.animator().alphaValue = 0
-            }, completionHandler: { win.close() })
+            }, completionHandler: {
+                win.orderOut(nil)
+                if hudWindow === win { hudWindow = nil }
+            })
         }
+        hudDismiss = dismiss
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.3, execute: dismiss)
     }
 }
 
@@ -151,7 +166,8 @@ func takeScreenshot() {
                 pb.writeObjects([finalImg])
             }
             // 2. Звук
-            NSSound(contentsOfFile: "/System/Library/Sounds/Glass.aiff", byReference: true)?.play()
+            activeSound = NSSound(contentsOfFile: "/System/Library/Sounds/Glass.aiff", byReference: true)
+            activeSound?.play()
             // 3. HUD-окошко с именем файла и размером
             let name = (finalPath as NSString).lastPathComponent
             showHUD("📸  \(name)  ·  \(sizeKB) КБ  ·  скопирован в буфер")
@@ -265,9 +281,56 @@ func startTap() {
     let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
     CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
     CGEvent.tapEnable(tap: tap, enable: true)
+
+    // Жесты лаунчера (активны ТОЛЬКО когда фронтмост — лаунчер, напр. LaunchNext):
+    //   3 пальца вбок = листание;  2 пальца РЕЗКИЙ взмах вверх = скрыть (Escape; Mission Control не трогается).
+    // Настройка без пересборки (затем перезапуск приложения):
+    //   defaults write com.nikita.layoutswitcher swipeGain -2000      (листание: сила/инверсия)
+    //   defaults write com.nikita.layoutswitcher swipeFlickVel 3.0    (скорость взмаха вверх; минус=инверсия; 0=выкл)
+    //   defaults write com.nikita.layoutswitcher launcherBundleId "LaunchNext"
+    let swipeGain  = UserDefaults.standard.object(forKey: "swipeGain") as? Double ?? -1500.0
+    let swipeFlick = UserDefaults.standard.object(forKey: "swipeFlickVel") as? Double ?? 4.0
+    mtswipe_start(swipeGain, swipeFlick)
+    mtswipe_log("startTap: accessibility OK, gestures armed")
+
+    let launcherBundleId = UserDefaults.standard.string(forKey: "launcherBundleId") ?? "LaunchNext"
+    let launcherName     = UserDefaults.standard.string(forKey: "launcherOwnerName") ?? "LaunchNext"
+    let systemOwners: Set<String> = ["LayoutSwitcher", "Window Server", "Dock", "Control Center",
+                                     "Spotlight", "Notification Center", "Wallpaper"]
+    // LaunchNext — это меню-бар оверлей; frontmostApplication его может не отражать,
+    // поэтому дополнительно смотрим владельца верхнего окна на экране.
+    func launcherIsFront() -> Bool {
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == launcherBundleId { return true }
+        let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        if let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] {
+            for w in list {
+                guard let owner = w[kCGWindowOwnerName as String] as? String else { continue }
+                if systemOwners.contains(owner) { continue }
+                return owner == launcherName
+            }
+        }
+        return false
+    }
+    var lastActive = -1
+    func updateSwipeActive() {
+        let on = launcherIsFront() ? 1 : 0
+        if on != lastActive {
+            lastActive = on
+            let f = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+            mtswipe_log("front=\(f) launcherFront -> active=\(on)")
+        }
+        mtswipe_set_active(Int32(on))
+    }
+    NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { _ in updateSwipeActive() }
+    Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in updateSwipeActive() }
+    updateSwipeActive()
+
     print("[LayoutSwitcher] Запущен.")
     print("  Cmd+Shift  → переключить раскладку")
     print("  Cmd+Ё      → скриншот → ~/Screenshots/")
+    print("  В лаунчере: 3 пальца вбок = листание, 2 пальца вверх = скрыть")
 }
 
 // MARK: - Main
