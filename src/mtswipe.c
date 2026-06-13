@@ -68,12 +68,21 @@ static void postKey(CGKeyCode k) {
     if (d) { CGEventPost(kCGHIDEventTap, d); CFRelease(d); }
     if (u) { CGEventPost(kCGHIDEventTap, u); CFRelease(u); }
 }
-// Клавиша с модификатором (для Ctrl+стрелка = переключение Spaces).
+// Ctrl+клавиша как РЕАЛЬНАЯ последовательность: физически нажать Control,
+// затем клавишу, отпустить, отпустить Control. Для системного переключения
+// Spaces одного флага мало — нужно настоящее удержание модификатора.
+#define VK_LCONTROL 0x3B
 static void postKeyMod(CGKeyCode k, CGEventFlags flags) {
-    CGEventRef d = CGEventCreateKeyboardEvent(NULL, k, true);
-    CGEventRef u = CGEventCreateKeyboardEvent(NULL, k, false);
-    if (d) { CGEventSetFlags(d, flags); CGEventPost(kCGHIDEventTap, d); CFRelease(d); }
-    if (u) { CGEventSetFlags(u, flags); CGEventPost(kCGHIDEventTap, u); CFRelease(u); }
+    CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+    CGEventRef cD = CGEventCreateKeyboardEvent(src, VK_LCONTROL, true);
+    CGEventRef kD = CGEventCreateKeyboardEvent(src, k, true);
+    CGEventRef kU = CGEventCreateKeyboardEvent(src, k, false);
+    CGEventRef cU = CGEventCreateKeyboardEvent(src, VK_LCONTROL, false);
+    if (cD) { CGEventSetFlags(cD, flags); CGEventPost(kCGHIDEventTap, cD); CFRelease(cD); }
+    if (kD) { CGEventSetFlags(kD, flags); CGEventPost(kCGHIDEventTap, kD); CFRelease(kD); }
+    if (kU) { CGEventSetFlags(kU, flags); CGEventPost(kCGHIDEventTap, kU); CFRelease(kU); }
+    if (cU) { CGEventSetFlags(cU, 0);     CGEventPost(kCGHIDEventTap, cU); CFRelease(cU); }
+    if (src) CFRelease(src);
 }
 static void endPaging(void) { if (gPbegun) { postPhase(0, 4); gPbegun = 0; } }
 static void endHideWatch(void) {
@@ -84,32 +93,9 @@ static void endHideWatch(void) {
 static int mt_callback(MTDeviceRef dev, MTTouch *t, int n, double ts, int frame) {
     (void)dev; (void)frame;
 
-    // ВНЕ лаунчера: 3 пальца вбок -> переключение рабочего стола (Spaces).
-    if (!gAppActive) {
-        endPaging(); endHideWatch(); gMode = 0; gSessionMax = 0;
-        int act = 0; float sx = 0;
-        for (int i = 0; i < n; i++)
-            if (t[i].state == 4 || t[i].state == 3) { act++; sx += t[i].normalized.pos.x; }
-        if (act == 3) {
-            float avgX = sx / 3.0f;
-            if (gSpMode != 3) { gSpMode = 3; gSpStartX = avgX; gSpFired = 0; }
-            else if (!gSpFired) {
-                float d = avgX - gSpStartX;                  // <0 пальцы влево, >0 вправо
-                if (fabsf(d) > (float)gSpThreshold) {
-                    int goRight = (d < 0);                    // свайп влево -> стол справа (натурально)
-                    if (gSpInvert) goRight = !goRight;
-                    postKeyMod(goRight ? 0x7C : 0x7B, kCGEventFlagMaskControl); // Ctrl+Right / Ctrl+Left
-                    gSpFired = 1;
-                    lg("[%.3f] SPACE switch %s (d=%.3f)", now_s(), goRight ? "right" : "left", d);
-                }
-            }
-        } else {
-            gSpMode = 0;
-            if (act == 0) gSpFired = 0;
-        }
-        return 0;
-    }
-    gSpMode = 0; gSpFired = 0;  // вошли в лаунчер — сброс состояния Spaces-свайпа
+    // ВНЕ лаунчера: не вмешиваемся — система сама листает Spaces нативным
+    // 3-пальцевым свайпом (синтетический Ctrl+стрелка macOS игнорирует by design).
+    if (!gAppActive) { endPaging(); endHideWatch(); gMode = 0; gSessionMax = 0; return 0; }
 
     int active = 0; float sumX = 0, sumY = 0;
     for (int i = 0; i < n; i++)
