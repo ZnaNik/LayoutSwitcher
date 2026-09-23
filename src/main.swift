@@ -138,7 +138,7 @@ func takeScreenshot() {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-i", tmpPath]   // интерактивный выбор области → временный PNG
+        task.arguments = ["-i", "-x", tmpPath]   // интерактивный выбор области → временный PNG, -x без звука затвора
         try? task.run()
         task.waitUntilExit()
 
@@ -165,9 +165,7 @@ func takeScreenshot() {
                 pb.clearContents()
                 pb.writeObjects([finalImg])
             }
-            // 2. Звук
-            activeSound = NSSound(contentsOfFile: "/System/Library/Sounds/Glass.aiff", byReference: true)
-            activeSound?.play()
+            // 2. Звука нет: владелец 24.09 попросил убрать
             // 3. HUD-окошко с именем файла и размером
             let name = (finalPath as NSString).lastPathComponent
             showHUD("📸  \(name)  ·  \(sizeKB) КБ  ·  скопирован в буфер")
