@@ -203,7 +203,15 @@ let screenshotKeycode: Int64 = {
     return v > 0 ? Int64(v) : 42
 }()
 
+var gTap: CFMachPort?
+
 func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    // macOS отключает перехват, если система подвисла: включаем обратно, иначе горячие клавиши молча умирают
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        mtswipe_log("tap disabled (\(type.rawValue)), re-enabling")
+        if let t = gTap { CGEvent.tapEnable(tap: t, enable: true) }
+        return Unmanaged.passUnretained(event)
+    }
     switch type {
 
     case .keyDown:
@@ -276,6 +284,7 @@ func startTap() {
         return
     }
 
+    gTap = tap
     let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
     CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
     CGEvent.tapEnable(tap: tap, enable: true)
