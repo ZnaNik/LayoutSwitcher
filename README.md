@@ -9,6 +9,7 @@
 | `Cmd+Shift` | Переключить раскладку клавиатуры |
 | `Cmd+\` | Скриншот области → JPEG в `~/Screenshots/` + копия в буфер + HUD-плашка |
 | `Cmd+Shift+\` | Видео: открывает нативную панель записи macOS (выбор области, звук, стоп) |
+| `Cmd+Option+\` | Режим «отошёл»: вкл/выкл. Включён и 30 с без мыши и клавиатуры — экран гаснет, сессии работают дальше (см. ниже) |
 | Свайп 3 пальцами ←/→ | Листание страниц лаунчера (имитирует двухпальцевый свайп — для замен Launchpad: LaunchNext и т.п.) |
 | Резкий взмах 2 пальцами ↑ | Скрыть лаунчер (Escape) |
 
@@ -28,6 +29,18 @@ defaults write com.nikita.layoutswitcher launcherBundleId LaunchNext # к как
 
 > Скрытие — по **скорости резкого взмаха двумя пальцами вверх** (а не по расстоянию): срабатывает мгновенно, не двигая страницу, и не конфликтует с Mission Control (тот остаётся на трёх пальцах). Пиковая скорость взмаха пишется в `~/Library/Logs/lsswipe.log` — по ней удобно подобрать `swipeFlickVel`.
 
+## Режим «отошёл»
+
+Нужен, когда отходишь от Мака, а сессии на нём должны работать, внешний монитор и Parsec — не отваливаться. Это не сон и не системное гашение дисплея (при сне дисплея монитор и Parsec теряются, а блокировка срабатывает через 300 с после гашения).
+
+- `Cmd+Option+\` включает режим: плашка «🌙 Режим «отошёл»», значок 🌙 (`moon.fill`) в строке меню с пунктом «Выключить (⌘⌥\)».
+- После 30 с без мыши и клавиатуры экран гаснет **своими средствами**: на каждый экран чёрное окно поверх всего (уровень экрана-заставки, на всех Spaces) + яркость встроенного экрана 0. Дисплей системно не спит, Мак не спит (держатся два assertion IOKit: `PreventUserIdleDisplaySleep` и `PreventUserIdleSystemSleep`), блокировки нет.
+- Любое движение мыши или нажатие клавиши (в том числе из Parsec) сразу возвращает экран и яркость. Режим при этом остаётся включённым: ещё через 30 с простоя экран погаснет снова. Пока режим не снят повторным `Cmd+Option+\` (или пунктом меню), он не уходит.
+- Пока режим включён, существует файл-флаг `/tmp/.layoutswitcher-away` — по нему внешние скрипты (например `~/bin/sleep-policy.sh`) знают, что гасить и усыплять Мак не надо.
+- Яркость до гашения запоминается в `defaults` (`awaySavedBrightness`): если приложение убили в погашенном состоянии, при следующем старте яркость вернётся. После перезапуска режим выключен (флаг удаляется). На SIGTERM (launchd) экран возвращается, режим снимается, приложение выходит.
+- Яркость встроенного экрана читается и ставится через приватный `DisplayServices.framework` (`dlopen`). Если его нет — окна всё равно гасят экран, яркость не трогается (строка в `~/Library/Logs/lsswipe.log`).
+- Клавиша тоже зависит от `screenshotKeycode` (по умолчанию `\`, keycode 42).
+
 ## Под капотом — только нативные инструменты macOS
 
 - Раскладка — `TISSelectInputSource`
@@ -36,15 +49,18 @@ defaults write com.nikita.layoutswitcher launcherBundleId LaunchNext # к как
 - Перехват клавиш — CGEvent event tap
 - Жесты трекпада — чтение через MultitouchSupport (`src/mtswipe.c`): 3 пальца вбок → точный скролл-жест с фазой, 2 пальца резко вверх → Escape; активны только пока лаунчер фронтмост (NSWorkspace + CGWindowList)
 - Уведомления — свой HUD на NSPanel (системные глушатся у фоновых процессов)
+- Режим «отошёл» — чёрные `NSWindow` на уровне `CGShieldingWindowLevel` + `DisplayServices` (яркость) + `IOPMAssertion` (не спать); логика таймера простоя — `src/away.swift`, обвязка — `src/away_ui.swift`
 
 ## Сборка
 
 ```bash
-swiftc src/main.swift src/mtswipe.c -import-objc-header src/bridge.h \
-  -framework Carbon -framework AppKit -framework Foundation \
+swiftc src/main.swift src/away.swift src/away_ui.swift src/mtswipe.c -import-objc-header src/bridge.h \
+  -framework Carbon -framework AppKit -framework Foundation -framework IOKit \
   -F /System/Library/PrivateFrameworks -framework MultitouchSupport \
   -o LayoutSwitcherBin
 ```
+
+Тесты логики режима «отошёл» (без AppKit, без XCTest): `bash tests/run.sh`.
 
 Затем собрать `.app` bundle, подписать (`codesign --force --deep -s -`), положить в `/Applications`.
 

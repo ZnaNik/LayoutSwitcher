@@ -232,6 +232,12 @@ func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> U
             return nil
         }
 
+        // Cmd+Option+\ (keycode 42)  →  режим «отошёл» (src/away_ui.swift)
+        if keycode == screenshotKeycode && flags == awayHotkeyFlags {
+            DispatchQueue.main.async { awayToggle() }
+            return nil
+        }
+
     case .flagsChanged:
         let flags    = event.flags
         let relevant = CGEventFlags(rawValue: flags.rawValue & watchedMods.rawValue)
@@ -337,6 +343,7 @@ func startTap() {
     print("[LayoutSwitcher] Запущен.")
     print("  Cmd+Shift  → переключить раскладку")
     print("  Cmd+Ё      → скриншот → ~/Screenshots/")
+    print("  Cmd+Option+\\ → режим «отошёл» (экран гаснет через 30 с простоя)")
     print("  В лаунчере: 3 пальца вбок = листание, 2 пальца вверх = скрыть")
 }
 
@@ -349,5 +356,6 @@ NSSetUncaughtExceptionHandler { ex in
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
+awayStartup()
 requestAccessibility()
 app.run()

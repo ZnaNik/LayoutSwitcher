@@ -12,9 +12,9 @@ UID_=$(id -u)
 
 echo "→ Компиляция (Swift + C-жесты + MultitouchSupport)..."
 cd ~/LayoutSwitcher
-swiftc "$SRC/main.swift" "$SRC/mtswipe.c" \
+swiftc "$SRC/main.swift" "$SRC/away.swift" "$SRC/away_ui.swift" "$SRC/mtswipe.c" \
   -import-objc-header "$SRC/bridge.h" \
-  -framework Carbon -framework AppKit -framework Foundation -framework ApplicationServices \
+  -framework Carbon -framework AppKit -framework Foundation -framework ApplicationServices -framework IOKit \
   -F /System/Library/PrivateFrameworks -framework MultitouchSupport \
   -O -o LayoutSwitcherBin
 
