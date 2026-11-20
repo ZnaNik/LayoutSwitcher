@@ -34,12 +34,21 @@ defaults write com.nikita.layoutswitcher launcherBundleId LaunchNext # к как
 Нужен, когда отходишь от Мака, а сессии на нём должны работать, внешний монитор и Parsec — не отваливаться. Это не сон и не системное гашение дисплея (при сне дисплея монитор и Parsec теряются, а блокировка срабатывает через 300 с после гашения).
 
 - `Cmd+Option+\` включает режим: плашка «🌙 Режим «отошёл»», значок 🌙 (`moon.fill`) в строке меню с пунктом «Выключить (⌘⌥\)».
-- После 30 с без мыши и клавиатуры экран гаснет **своими средствами**: на каждый экран чёрное окно поверх всего (уровень экрана-заставки, на всех Spaces) + яркость встроенного экрана 0. Дисплей системно не спит, Мак не спит (держатся два assertion IOKit: `PreventUserIdleDisplaySleep` и `PreventUserIdleSystemSleep`), блокировки нет.
+- После 30 с без мыши и клавиатуры экран гаснет **своими средствами**: на каждый экран чёрное окно поверх всего (уровень экрана-заставки, на всех Spaces) + яркость встроенного экрана 0 (а при внешнем мониторе встроенный выключается целиком, см. ниже). Дисплей системно не спит, Мак не спит (держатся два assertion IOKit: `PreventUserIdleDisplaySleep` и `PreventUserIdleSystemSleep`), блокировки нет.
 - Любое движение мыши или нажатие клавиши (в том числе из Parsec) сразу возвращает экран и яркость. Режим при этом остаётся включённым: ещё через 30 с простоя экран погаснет снова. Пока режим не снят повторным `Cmd+Option+\` (или пунктом меню), он не уходит.
 - Пока режим включён, существует файл-флаг `/tmp/.layoutswitcher-away` — по нему внешние скрипты (например `~/bin/sleep-policy.sh`) знают, что гасить и усыплять Мак не надо.
 - Яркость до гашения запоминается в `defaults` (`awaySavedBrightness`): если приложение убили в погашенном состоянии, при следующем старте яркость вернётся. После перезапуска режим выключен (флаг удаляется). На SIGTERM (launchd) экран возвращается, режим снимается, приложение выходит.
 - Яркость встроенного экрана читается и ставится через приватный `DisplayServices.framework` (`dlopen`). Если его нет — окна всё равно гасят экран, яркость не трогается (строка в `~/Library/Logs/lsswipe.log`).
 - Клавиша тоже зависит от `screenshotKeycode` (по умолчанию `\`, keycode 42).
+
+Три добавки к гашению:
+
+- **Звук.** Пока экран чёрный, выход по умолчанию заглушён (CoreAudio, `kAudioDevicePropertyMute`; если у устройства нет mute — громкость `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` в 0 с запоминанием). Вернулся экран, режим выключили или пришёл SIGTERM — звук возвращается, но только если глушили мы (ключ `awayMutedByUs`, громкость в `awaySavedVolume`; ключ переживает падение и возвращается при старте). Уже заглушённый пользователем звук не трогается; громкость, поднятая руками пока экран чёрный, при возврате не перезаписывается.
+- **Батарея.** Раз в 30 с (и сразу при включении) режим смотрит на заряд (`IOPSCopyPowerSourcesInfo`). Питание от батареи и заряд ниже порога — режим выключается сам: экран, яркость и звук возвращаются, плашка «🌙 Режим «отошёл» выключен: заряд N%», строка в `~/Library/Logs/lsswipe.log`. От сети не выключается. Порог — `awayBatteryMin`, по умолчанию 20:
+  ```bash
+  defaults write com.nikita.layoutswitcher awayBatteryMin 30   # без пересборки; действует со следующей проверки
+  ```
+- **Настоящее выключение встроенного экрана** (как у Lunar). Если кроме встроенного есть хотя бы один другой активный экран, на гашении встроенный выключается целиком (приватный `SkyLight.framework`, `CGSConfigureDisplayEnabled` внутри `CGBeginDisplayConfiguration` / `CGCompleteDisplayConfiguration(.forSession)`, через `dlopen`); чёрные окна остаются на оставшихся экранах. Единственный экран не выключается никогда: тогда, как раньше, чёрное окно и яркость 0. Нет символа SkyLight — тихо остаёмся на яркости. ID выключенного экрана лежит в `defaults` (`awayDisabledDisplay`). Встроенный включается обратно на возврате экрана, при выключении режима, на SIGTERM и при старте (если ключ остался); сразу при смене экранов, если кроме выключенного активных экранов не осталось (внешний отключили; защита от бага Lunar, когда экран оставался чёрным), с запасной проверкой в таймере простоя. Включение повторяется до 3 раз с паузой 0.3 с, каждая ошибка пишется в лог.
 
 ## Под капотом — только нативные инструменты macOS
 
@@ -49,18 +58,19 @@ defaults write com.nikita.layoutswitcher launcherBundleId LaunchNext # к как
 - Перехват клавиш — CGEvent event tap
 - Жесты трекпада — чтение через MultitouchSupport (`src/mtswipe.c`): 3 пальца вбок → точный скролл-жест с фазой, 2 пальца резко вверх → Escape; активны только пока лаунчер фронтмост (NSWorkspace + CGWindowList)
 - Уведомления — свой HUD на NSPanel (системные глушатся у фоновых процессов)
-- Режим «отошёл» — чёрные `NSWindow` на уровне `CGShieldingWindowLevel` + `DisplayServices` (яркость) + `IOPMAssertion` (не спать); логика таймера простоя — `src/away.swift`, обвязка — `src/away_ui.swift`
+- Режим «отошёл» — чёрные `NSWindow` на уровне `CGShieldingWindowLevel` + `DisplayServices` (яркость) + `SkyLight` (выключение встроенного экрана) + `CoreAudio` (звук) + `IOPS` (заряд) + `IOPMAssertion` (не спать); логика (таймер простоя, решения по батарее и встроенному экрану) — `src/away.swift`, обвязка — `src/away_ui.swift`
 
 ## Сборка
 
 ```bash
 swiftc src/main.swift src/away.swift src/away_ui.swift src/mtswipe.c -import-objc-header src/bridge.h \
-  -framework Carbon -framework AppKit -framework Foundation -framework IOKit \
+  -framework Carbon -framework AppKit -framework Foundation -framework ApplicationServices -framework IOKit \
+  -framework CoreAudio -framework AudioToolbox \
   -F /System/Library/PrivateFrameworks -framework MultitouchSupport \
   -o LayoutSwitcherBin
 ```
 
-Тесты логики режима «отошёл» (без AppKit, без XCTest): `bash tests/run.sh`.
+Тесты логики режима «отошёл» (простой, батарея, выключение встроенного экрана; без AppKit, без XCTest): `bash tests/run.sh`.
 
 Затем собрать `.app` bundle, подписать (`codesign --force --deep -s -`), положить в `/Applications`.
 

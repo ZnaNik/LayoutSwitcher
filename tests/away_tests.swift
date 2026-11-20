@@ -159,6 +159,60 @@ struct AwayTests {
             checkEq(m.tick(idle: 0.4), .undim, "wake 0.5: 0.4 -> undim")
         }
 
+        // Батарея: выключаем режим, только если питание от батареи и заряд ниже порога
+        do {
+            check(awayShouldStopForBattery(onBattery: false, percent: 5, minPercent: 20) == false,
+                  "батарея: на сети 5% -> нет")
+            check(awayShouldStopForBattery(onBattery: true, percent: 19, minPercent: 20),
+                  "батарея: на батарее 19% (порог 20) -> да")
+            check(awayShouldStopForBattery(onBattery: true, percent: 20, minPercent: 20) == false,
+                  "батарея: на батарее ровно 20% (порог 20) -> нет (порог строгий)")
+            check(awayShouldStopForBattery(onBattery: true, percent: nil, minPercent: 20) == false,
+                  "батарея: процент не прочитан (nil) -> нет")
+            check(awayShouldStopForBattery(onBattery: true, percent: 25, minPercent: 30),
+                  "батарея: порог 30, на батарее 25% -> да")
+            check(awayShouldStopForBattery(onBattery: true, percent: 0, minPercent: 20),
+                  "батарея: на батарее 0% -> да")
+            check(awayShouldStopForBattery(onBattery: true, percent: 100, minPercent: 20) == false,
+                  "батарея: на батарее 100% -> нет")
+            check(awayShouldStopForBattery(onBattery: false, percent: nil, minPercent: 20) == false,
+                  "батарея: на сети и nil -> нет")
+            check(awayShouldStopForBattery(onBattery: false, percent: 19, minPercent: 20) == false,
+                  "батарея: на сети 19% -> нет")
+            check(awayShouldStopForBattery(onBattery: true, percent: 29, minPercent: 30),
+                  "батарея: порог 30, 29% -> да")
+            check(awayShouldStopForBattery(onBattery: true, percent: 30, minPercent: 30) == false,
+                  "батарея: порог 30, ровно 30% -> нет")
+        }
+
+        // Выключение встроенного экрана: только если он активен и есть ещё хотя бы один активный экран
+        do {
+            check(awayShouldDisableBuiltin(activeDisplays: 1, builtinActive: true) == false,
+                  "встроенный: единственный экран -> не выключаем")
+            check(awayShouldDisableBuiltin(activeDisplays: 2, builtinActive: true),
+                  "встроенный: 2 экрана, встроенный активен -> выключаем")
+            check(awayShouldDisableBuiltin(activeDisplays: 2, builtinActive: false) == false,
+                  "встроенный: 2 экрана, встроенный неактивен -> нет")
+            check(awayShouldDisableBuiltin(activeDisplays: 3, builtinActive: true),
+                  "встроенный: 3 экрана, встроенный активен -> выключаем")
+            check(awayShouldDisableBuiltin(activeDisplays: 0, builtinActive: true) == false,
+                  "встроенный: 0 экранов -> нет")
+            check(awayShouldDisableBuiltin(activeDisplays: 1, builtinActive: false) == false,
+                  "встроенный: 1 экран и встроенный неактивен -> нет")
+            check(awayShouldDisableBuiltin(activeDisplays: 3, builtinActive: false) == false,
+                  "встроенный: 3 экрана, встроенный неактивен -> нет")
+        }
+
+        // Возврат выключенного нами встроенного экрана: сразу, если других активных экранов не осталось
+        do {
+            check(awayShouldRestoreBuiltin(otherActiveDisplays: 0),
+                  "возврат встроенного: других активных экранов нет -> вернуть")
+            check(awayShouldRestoreBuiltin(otherActiveDisplays: 1) == false,
+                  "возврат встроенного: остался один внешний -> не трогаем")
+            check(awayShouldRestoreBuiltin(otherActiveDisplays: 2) == false,
+                  "возврат встроенного: остались два внешних -> не трогаем")
+        }
+
         print("")
         print("проверок: \(checks), провалов: \(failures)")
         if failures > 0 {

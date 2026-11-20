@@ -8,6 +8,25 @@
 
 enum AwayAction: Equatable { case none, dim, undim }
 
+/// Батарея: режим надо выключить, если питание от батареи и заряд ниже порога.
+/// percent == nil (заряд не прочитан) — не выключаем.
+func awayShouldStopForBattery(onBattery: Bool, percent: Int?, minPercent: Int) -> Bool {
+    guard onBattery, let percent = percent else { return false }
+    return percent < minPercent
+}
+
+/// Встроенный экран можно выключить, только если он активен и есть хотя бы ещё один активный экран.
+/// Единственный экран не выключаем никогда.
+func awayShouldDisableBuiltin(activeDisplays: Int, builtinActive: Bool) -> Bool {
+    return builtinActive && activeDisplays >= 2
+}
+
+/// Встроенный экран, выключенный нами, надо вернуть сразу, если кроме него не осталось активных экранов
+/// (внешний отключили): иначе Мак остаётся с чёрным экраном (баг Lunar).
+func awayShouldRestoreBuiltin(otherActiveDisplays: Int) -> Bool {
+    return otherActiveDisplays <= 0
+}
+
 final class AwayMode {
     /// Сколько секунд простоя до гашения.
     let delay: Double

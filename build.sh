@@ -10,11 +10,11 @@ APP="/Applications/LayoutSwitcher.app"
 SRC=~/LayoutSwitcher/src
 UID_=$(id -u)
 
-echo "→ Компиляция (Swift + C-жесты + MultitouchSupport)..."
+echo "→ Компиляция (Swift + C-жесты + MultitouchSupport + CoreAudio)..."
 cd ~/LayoutSwitcher
 swiftc "$SRC/main.swift" "$SRC/away.swift" "$SRC/away_ui.swift" "$SRC/mtswipe.c" \
   -import-objc-header "$SRC/bridge.h" \
-  -framework Carbon -framework AppKit -framework Foundation -framework ApplicationServices -framework IOKit \
+  -framework Carbon -framework AppKit -framework Foundation -framework ApplicationServices -framework IOKit -framework CoreAudio -framework AudioToolbox \
   -F /System/Library/PrivateFrameworks -framework MultitouchSupport \
   -O -o LayoutSwitcherBin
 
