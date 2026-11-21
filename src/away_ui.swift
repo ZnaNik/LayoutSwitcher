@@ -443,6 +443,7 @@ private func awayDim() {
     awayBuildWindows()
     awayDimBrightness()   // яркость 0 до выключения экрана: запомнится и вернётся после включения
     awayMuteAudio()
+    awayKeyboardOff()
     awayDisableBuiltinDisplay()  // окна на оставшихся экранах перестроит didChangeScreenParameters
     mtswipe_log("away: экран погашен, окон \(awayWindows.count), встроенный выключен: \(awayDisabledDisplay != nil)")
 }
@@ -452,6 +453,7 @@ private func awayUndim() {
     awayRestoreBuiltinDisplay()  // сначала экран, потом яркость: выключенному яркость не вернуть
     awayRestoreBrightness()
     awayRestoreAudio()
+    awayKeyboardRestore()
     mtswipe_log("away: экран возвращён")
 }
 
@@ -603,6 +605,7 @@ private func awayShutdown() {
     awayRestoreBuiltinDisplay()
     awayRestoreBrightness()
     awayRestoreAudio()
+    awayKeyboardRestore()
     try? FileManager.default.removeItem(atPath: awayFlagPath)
     exit(0)
 }
@@ -612,6 +615,7 @@ func awayStartup() {
     awayRestoreBuiltinDisplay()  // ключ остался: сначала вернуть экран, иначе яркость вернуть некому
     awayRestoreBrightnessLeftover()
     awayRestoreAudio()           // ключ остался: вернуть звук (устройство = выход по умолчанию)
+    awayKeyboardRestore()        // запомненная подсветка клавиатуры осталась: вернуть
     try? FileManager.default.removeItem(atPath: awayFlagPath)  // после перезапуска режим выключен
 
     awayScreenObserver = NotificationCenter.default.addObserver(

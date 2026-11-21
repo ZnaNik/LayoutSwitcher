@@ -44,6 +44,7 @@ defaults write com.nikita.layoutswitcher launcherBundleId LaunchNext # к как
 Три добавки к гашению:
 
 - **Звук.** Пока экран чёрный, выход по умолчанию заглушён (CoreAudio, `kAudioDevicePropertyMute`; если у устройства нет mute — громкость `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` в 0 с запоминанием). Вернулся экран, режим выключили или пришёл SIGTERM — звук возвращается, но только если глушили мы (ключ `awayMutedByUs`, громкость в `awaySavedVolume`; ключ переживает падение и возвращается при старте). Уже заглушённый пользователем звук не трогается; громкость, поднятая руками пока экран чёрный, при возврате не перезаписывается.
+- **Подсветка клавиатуры.** Пока экран чёрный, подсветка клавиатуры выключена, автоподстройка снята (иначе она подняла бы свет). Вернулся экран, режим выключили, SIGTERM или старт после падения — яркость подсветки и автоподстройка возвращаются как были (ключ `awayKeyboardSaved`). Приватный `KeyboardBrightnessClient` из CoreBrightness, `src/away_keyboard.swift`; нет класса — подсветку не трогаем.
 - **Батарея.** Раз в 30 с (и сразу при включении) режим смотрит на заряд (`IOPSCopyPowerSourcesInfo`). Питание от батареи и заряд ниже порога — режим выключается сам: экран, яркость и звук возвращаются, плашка «🌙 Режим «отошёл» выключен: заряд N%», строка в `~/Library/Logs/lsswipe.log`. От сети не выключается. Порог — `awayBatteryMin`, по умолчанию 20:
   ```bash
   defaults write com.nikita.layoutswitcher awayBatteryMin 30   # без пересборки; действует со следующей проверки
@@ -58,12 +59,12 @@ defaults write com.nikita.layoutswitcher launcherBundleId LaunchNext # к как
 - Перехват клавиш — CGEvent event tap
 - Жесты трекпада — чтение через MultitouchSupport (`src/mtswipe.c`): 3 пальца вбок → точный скролл-жест с фазой, 2 пальца резко вверх → Escape; активны только пока лаунчер фронтмост (NSWorkspace + CGWindowList)
 - Уведомления — свой HUD на NSPanel (системные глушатся у фоновых процессов)
-- Режим «отошёл» — чёрные `NSWindow` на уровне `CGShieldingWindowLevel` + `DisplayServices` (яркость) + `SkyLight` (выключение встроенного экрана) + `CoreAudio` (звук) + `IOPS` (заряд) + `IOPMAssertion` (не спать); логика (таймер простоя, решения по батарее и встроенному экрану) — `src/away.swift`, обвязка — `src/away_ui.swift`
+- Режим «отошёл» — чёрные `NSWindow` на уровне `CGShieldingWindowLevel` + `DisplayServices` (яркость) + `SkyLight` (выключение встроенного экрана) + `CoreAudio` (звук) + `CoreBrightness` (подсветка клавиатуры, `src/away_keyboard.swift`) + `IOPS` (заряд) + `IOPMAssertion` (не спать); логика (таймер простоя, решения по батарее и встроенному экрану) — `src/away.swift`, обвязка — `src/away_ui.swift`
 
 ## Сборка
 
 ```bash
-swiftc src/main.swift src/away.swift src/away_ui.swift src/mtswipe.c -import-objc-header src/bridge.h \
+swiftc src/main.swift src/away.swift src/away_ui.swift src/away_keyboard.swift src/mtswipe.c -import-objc-header src/bridge.h \
   -framework Carbon -framework AppKit -framework Foundation -framework ApplicationServices -framework IOKit \
   -framework CoreAudio -framework AudioToolbox \
   -F /System/Library/PrivateFrameworks -framework MultitouchSupport \
